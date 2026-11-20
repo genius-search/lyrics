@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Genius · Letras de músicas</title>
 <meta name="description" content="Encontre músicas, artistas e letras.">
+<meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#111111">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -178,7 +179,7 @@ footer strong{display:block;font-size:22px;font-weight:900;color:#fff;font-style
 <div class="toast" id="toast" role="status"></div>
 <script>
 /* Elipse · interface de letras. Sem dependências de instalação. */
-var VERSAO = "2.1.0";
+var VERSAO = "2.2.0";
 var PADRAO = {
   url: "https://11z.co/_w/17794/selection",          // Inject do Eduardo
   formato: "{musica} – {artista} ▸ {palavra}",         // tudo numa linha (o Inject só mostra a 1ª linha)
@@ -331,13 +332,14 @@ function openSearch(txt, push) {
   if (txt != null) { q.value = txt; buscar(txt, true); }
   else if (!wasOpen) { q.value = ""; buscar(""); }
   updateSearchView();
-  if (!wasOpen && push !== false) history.pushState({view:"search"}, "");
+  if (!wasOpen && push !== false) history.replaceState({view:"search"}, "");
   window.scrollTo(0,0); q.focus();
 }
 function hideSearch() { document.body.classList.remove("search-open", "search-results"); q.blur(); clearTimeout(tBusca); }
 function closeSearch() {
-  if (history.state && history.state.view === "search" && atual) { hideSearch(); history.back(); }
-  else { hideSearch(); if (!atual) { document.body.classList.add("no-song"); q.value = ""; buscar(""); } }
+  hideSearch();
+  if (atual) history.replaceState({view:"song", id:String(atual.id || keyTrack(atual))}, "");
+  else { document.body.classList.add("no-song"); q.value = ""; buscar(""); }
 }
 function buscar(txt, immediate) {
   txt = txt.trim(); clearTimeout(tBusca); searchVersion++;
@@ -398,8 +400,7 @@ function abrir(t, push) {
   document.title = t.trackName + " – " + t.artistName + " · Genius";
   window.scrollTo(0,0);
   var nav = {view:"song", id:String(t.id || keyTrack(t))};
-  if (push) history.pushState(nav, "");
-  else if (!history.state || history.state.view !== "search") history.replaceState(nav, "");
+  history.replaceState(nav, "");
 }
 window.addEventListener("popstate", function (e) {
   if (e.state && e.state.view === "search") { document.body.classList.add("search-open"); updateSearchView(); window.scrollTo(0,0); if (q.value.trim().length >= 2 && !resultados.length) buscar(q.value,true); return; }
@@ -446,7 +447,7 @@ function escolher(w){
   }
   clearTimeout(tRedirecionar);
   tRedirecionar = setTimeout(function(){
-    window.location.href = "https://genius.com/";
+    window.location.replace("https://genius.com/");
   }, 10000);
 }
 function mostrarBalao(w){
