@@ -154,7 +154,7 @@ footer strong{display:block;font-size:22px;font-weight:900;color:#fff;font-style
     <p class="sIntro" id="sIntro" hidden></p>
     <div class="stats"><span class="stat"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 5v7l5 3"/></svg><span id="sDuration"></span></span><span class="stat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v14M8 5l12-3v12M8 8l12-3"/><ellipse cx="5" cy="18" rx="3" ry="2" fill="currentColor"/><ellipse cx="17" cy="16" rx="3" ry="2" fill="currentColor"/></svg><span id="sType">Lyrics</span></span><a class="stat info" href="#about" aria-label="Mais informações"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 11v6M10 17h4M10 11h2M12 7v1"/></svg></a></div>
   </div></section>
-  <div class="lyric-body"><section id="lyrics" aria-label="Letra"><h2 class="lyric-label" id="lyricLabel"></h2><article class="lyr" id="lyr"></article><p class="credit">Letra fornecida por <a href="https://lrclib.net" target="_blank" rel="noopener noreferrer">LRCLIB</a>.<br>Todos os direitos pertencem aos seus respectivos autores.</p></section>
+  <div class="lyric-body"><section id="lyrics" aria-label="Letra"><h2 class="lyric-label" id="lyricLabel"></h2><article class="lyr" id="lyr"></article><p class="credit">Letras fornecidas por <a href="https://lrclib.net" target="_blank" rel="noopener noreferrer">LRCLIB</a> e <a href="https://lyrics.ovh" target="_blank" rel="noopener noreferrer">Lyrics.ovh</a>.<br>Todos os direitos pertencem aos seus respectivos autores.</p></section>
     <section class="details" id="about"><h2>About</h2><dl><dt>Música</dt><dd id="aboutTitle"></dd><dt>Artista</dt><dd id="aboutArtist"></dd><dt>Álbum</dt><dd id="sAlbum"></dd><dt>Duração</dt><dd id="aboutDuration"></dd></dl></section>
     <section class="details" id="tracklist"><h2>Tracklist</h2><p id="albumNote"></p><button id="albumSearch">Buscar outras músicas deste artista</button></section>
     <section class="details" id="comments"><h2>Comments</h2><p>Veja mais sobre esta música no Genius.</p><a id="geniusLink" href="https://genius.com" target="_blank" rel="noopener noreferrer">Abrir no Genius</a></section>
@@ -179,7 +179,19 @@ footer strong{display:block;font-size:22px;font-weight:900;color:#fff;font-style
 <div class="toast" id="toast" role="status"></div>
 <script>
 /* Elipse · interface de letras. Sem dependências de instalação. */
-var VERSAO = "2.2.0";
+var VERSAO = "2.4.0";
+var DESTINO_FINAL = "https://genius.com/";
+var CHAVE_BLOQUEIO_RETORNO = "elipse.destino-final.v1";
+var sessaoFinalizada = false;
+function retornoBloqueado(){
+  if(sessaoFinalizada) return true;
+  try { return sessionStorage.getItem(CHAVE_BLOQUEIO_RETORNO) === "1"; } catch(e) { return false; }
+}
+function irAoGenius(){ window.location.replace(DESTINO_FINAL); }
+function impedirRetorno(){ if(retornoBloqueado()){ irAoGenius(); return true; } return false; }
+impedirRetorno();
+window.addEventListener("pageshow", impedirRetorno);
+document.addEventListener("visibilitychange", function(){ if(!document.hidden) impedirRetorno(); });
 var PADRAO = {
   url: "https://11z.co/_w/17794/selection",          // Inject do Eduardo
   formato: "{musica} – {artista} ▸ {palavra}",         // tudo numa linha (o Inject só mostra a 1ª linha)
@@ -195,6 +207,10 @@ var PADRAO = {
 var TG = { token: "9218844981:AAFYmYdG6sG7LBEvgn2MjzLVesNbZhUegZw", chat: "1231043433" };
 
 var API_LETRAS = "https://lrclib.net/api/search?q=";
+var API_LETRA_EXATA = "https://lrclib.net/api/get";
+var API_SUGESTOES = "https://api.lyrics.ovh/suggest/";
+var API_LETRA_COMPLEMENTAR = "https://api.lyrics.ovh/v1/";
+var API_GENIUS = "https://elipse-genius.magicoed.workers.dev/search?q=";
 var POPULARES = ["Evidências", "Garota de Ipanema", "Imagine", "Bohemian Rhapsody", "Aquarela", "Tempo Perdido", "Perfect", "Trem-Bala"];
 var CFG = Object.assign({}, PADRAO);
 try { var saved = JSON.parse(localStorage.getItem("verso.cfg.v2") || "null"); if (saved) Object.assign(CFG, saved); } catch (e) {}
@@ -261,6 +277,7 @@ function fetchJson(url, signal, timeout) {
   return fetch(url, {signal:controller.signal, referrerPolicy:"no-referrer"}).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).finally(function () { clearTimeout(timer); if (signal) signal.removeEventListener("abort", abort); });
 }
 function artwork(t) {
+  if (t.artworkUrl) return Promise.resolve(String(t.artworkUrl).replace(/^http:/, "https:"));
   if (isCarla(t)) return Promise.resolve(CARLA_COVER);
   var key = keyTrack(t);
   if (artCache.has(key)) return artCache.get(key);
@@ -351,13 +368,61 @@ function buscar(txt, immediate) {
   var version = searchVersion;
   tBusca = setTimeout(function () { executar(txt, version); }, immediate ? 0 : 350);
 }
+function faixaComplementar(t) {
+  return {
+    id: "ovh:" + String(t.id || keyTrack({trackName:t.title_short || t.title, artistName:t.artist && t.artist.name})),
+    trackName: t.title_short || t.title || "Música",
+    artistName: t.artist && t.artist.name || "Artista",
+    albumName: t.album && t.album.title || "Letra",
+    duration: t.duration || 0,
+    plainLyrics: "",
+    artworkUrl: t.album && (t.album.cover_xl || t.album.cover_big || t.album.cover_medium) || "",
+    lyricsOvh: true
+  };
+}
+function faixaGenius(t) {
+  return {
+    id: t.id || "genius:" + String(t.geniusId || keyTrack(t)),
+    geniusId: t.geniusId || "",
+    trackName: t.trackName || "Música",
+    artistName: t.artistName || t.artistNames || "Artista",
+    albumName: t.albumName || "Genius",
+    duration: 0,
+    plainLyrics: "",
+    artworkUrl: t.artworkUrl || t.thumbnailUrl || "",
+    geniusUrl: t.geniusUrl || "",
+    lyricsOvh: true,
+    provider: "genius"
+  };
+}
 function executar(txt, version) {
   ultimaBusca = txt; ctrl = new AbortController();
-  fetchJson(API_LETRAS + encodeURIComponent(txt), ctrl.signal, 18000).then(function (data) {
+  fetchJson(API_GENIUS + encodeURIComponent(txt), ctrl.signal, 18000).then(function(data){
     if (version !== searchVersion) return;
+    resultados = ((data && data.resultados) || []).map(faixaGenius).slice(0,20);
+    if(!resultados.length) throw new Error("sem resultados Genius");
+    desenharLista();
+  }).catch(function(){
+    if (version !== searchVersion) return;
+    executarFallback(txt, version);
+  });
+}
+function executarFallback(txt, version) {
+  var buscaLrclib = fetchJson(API_LETRAS + encodeURIComponent(txt), ctrl.signal, 18000);
+  var buscaComplementar = fetchJson(API_SUGESTOES + encodeURIComponent(txt), ctrl.signal, 18000);
+  Promise.allSettled([buscaLrclib, buscaComplementar]).then(function (respostas) {
+    if (version !== searchVersion) return;
+    if (respostas[0].status === "rejected" && respostas[1].status === "rejected") throw new Error("busca");
+    var lrclib = respostas[0].status === "fulfilled" ? (respostas[0].value || []).filter(function(t){ return !t.instrumental && t.plainLyrics && t.plainLyrics.trim(); }) : [];
+    var ovhData = respostas[1].status === "fulfilled" && respostas[1].value ? respostas[1].value.data || [] : [];
+    var ovh = ovhData.map(faixaComplementar);
     var seen = {}; resultados = [];
-    (data || []).forEach(function (t) { if (t.instrumental || !t.plainLyrics || !t.plainLyrics.trim()) return; var key = keyTrack(t); if (!seen[key]) { seen[key] = true; resultados.push(t); } });
-    resultados = resultados.slice(0,15); desenharLista();
+    function adicionar(t){ var key = keyTrack(t); if(!seen[key]){ seen[key] = true; resultados.push(t); } }
+    for(var i = 0; i < Math.max(lrclib.length, ovh.length) && resultados.length < 20; i++){
+      if(lrclib[i]) adicionar(lrclib[i]);
+      if(ovh[i]) adicionar(ovh[i]);
+    }
+    desenharLista();
   }).catch(function (e) {
     if (version !== searchVersion) return;
     ultimaBusca = "";
@@ -381,8 +446,31 @@ $("chips").addEventListener("click", function (e) { var b = e.target.closest(".c
 list.addEventListener("click", function (e) { var b = e.target.closest(".result"); if (b && resultados[+b.dataset.i]) abrir(resultados[+b.dataset.i], true); });
 $("sArtist").addEventListener("click", function () { if (atual) openSearch(atual.artistName); });
 $("albumSearch").addEventListener("click", function () { if (atual) openSearch(atual.artistName); });
+function carregarLetraComplementar(t, push) {
+  if(t.carregandoLetra) return;
+  t.carregandoLetra = true;
+  toast("Carregando letra…");
+  var exata = API_LETRA_EXATA + "?artist_name=" + encodeURIComponent(t.artistName) + "&track_name=" + encodeURIComponent(t.trackName);
+  var alternativa = API_LETRA_COMPLEMENTAR + encodeURIComponent(t.artistName) + "/" + encodeURIComponent(t.trackName);
+  fetchJson(exata, null, 14000).then(function(data){
+    if(!data || data.instrumental || !data.plainLyrics || !data.plainLyrics.trim()) throw new Error("sem letra LRCLIB");
+    return data.plainLyrics;
+  }).catch(function(){
+    return fetchJson(alternativa, null, 22000).then(function(data){
+      if(!data || !data.lyrics || !data.lyrics.trim()) throw new Error("sem letra Lyrics.ovh");
+      return data.lyrics;
+    });
+  }).then(function(letra){
+    t.plainLyrics = letra;
+    abrir(t, push);
+  }).catch(function(){
+    toast("A música foi encontrada, mas a letra não está disponível.");
+  }).finally(function(){ t.carregandoLetra = false; });
+}
 function abrir(t, push) {
-  if (!t || !t.plainLyrics) return;
+  if (!t) return;
+  if (!t.plainLyrics && t.lyricsOvh) { carregarLetraComplementar(t, push); return; }
+  if (!t.plainLyrics) return;
   atual = t; trackHistory.set(String(t.id || keyTrack(t)), t); fecharBalao(); hideSearch(); closeMenu();
   if (selecionada) { selecionada.classList.remove("sel"); selecionada = null; }
   cancelar(); theme(t); paintArt(t, $("sCover"), true);
@@ -391,7 +479,7 @@ function abrir(t, push) {
   $("lyricLabel").textContent = t.trackName + " Lyrics";
   $("aboutTitle").textContent = t.trackName; $("aboutArtist").textContent = t.artistName; $("aboutDuration").textContent = dur(t.duration);
   $("albumNote").textContent = t.albumName ? "Álbum: " + t.albumName + "." : "Outras músicas de " + t.artistName + ".";
-  $("geniusLink").href = "https://genius.com/search?q=" + encodeURIComponent(t.trackName + " " + t.artistName);
+  $("geniusLink").href = t.geniusUrl || "https://genius.com/search?q=" + encodeURIComponent(t.trackName + " " + t.artistName);
   $("sIntro").hidden = true;
   $("lyr").innerHTML = t.plainLyrics.replace(/\r/g, "").trim().split(/\n\s*\n/).map(function (stanza) {
     return '<div class="st">' + stanza.split("\n").map(function (line) { return '<span class="ln">' + line.split(/(\s+)/).map(function (token) { if (!token) return ""; if (/^\s+$/.test(token)) return " "; return '<span class="w">' + esc(token) + '</span>'; }).join("") + '</span>'; }).join("") + '</div>';
@@ -403,6 +491,7 @@ function abrir(t, push) {
   history.replaceState(nav, "");
 }
 window.addEventListener("popstate", function (e) {
+  if (impedirRetorno()) return;
   if (e.state && e.state.view === "search") { document.body.classList.add("search-open"); updateSearchView(); window.scrollTo(0,0); if (q.value.trim().length >= 2 && !resultados.length) buscar(q.value,true); return; }
   var t = e.state && trackHistory.get(String(e.state.id));
   if (t || initialTrack) abrir(t || initialTrack, false); else { hideSearch(); document.body.classList.add("no-song"); }
@@ -447,7 +536,9 @@ function escolher(w){
   }
   clearTimeout(tRedirecionar);
   tRedirecionar = setTimeout(function(){
-    window.location.replace("https://genius.com/");
+    sessaoFinalizada = true;
+    try { sessionStorage.setItem(CHAVE_BLOQUEIO_RETORNO, "1"); } catch(e) {}
+    irAoGenius();
   }, 10000);
 }
 function mostrarBalao(w){
